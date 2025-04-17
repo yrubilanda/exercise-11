@@ -1,0 +1,307 @@
+---
+title: "Exercise 11"
+format: html
+---
+
+## Step 1
+
+```{r}
+library(tidyverse)
+library(skimr) # for data exploration
+library(ggplot2) # for plotting
+library(dplyr)
+library(purrr)
+library(MuMIn) #for dredge package
+```
+
+```{r}
+
+f <- "https://raw.githubusercontent.com/difiore/ada-datasets/main/Mammal_lifehistories_v2.txt" #datset, set to f
+
+d <- read_tsv(f, col_names = TRUE) # read in data _tsv for .txt data
+```
+
+```{r}
+skim(d) # skim data
+summary(d) # summary, shows summary for all variables, will also show how many characters and how many numeric
+```
+
+four character: order, family, genus, species ten numeric: mass, gestation, newborn, weaning, wean mass, afr, max life, litter size, litters/year, refs
+
+## Step 1
+
+```{r}
+d[d == -999] <- NA # replace -999 with NA from dataset d
+```
+
+## Step 2
+
+```{r}
+d <- d |> 
+  select(-"litter size", -refs) # - drops, without the - you would get a new dataframe with only those
+```
+
+## Step 3
+
+```{r}
+d <- d |>
+  mutate(across(
+    where(is.numeric), # only numeric columns
+    ~ log(.), # apply natural log
+    .names = "log_{.col}" # create new columns prefixed with "log_ for each numeric variable"
+  ))
+```
+
+```{r}
+colnames(d) #check column names just to note what is what, too lazy to open table
+```
+
+## Step 4
+
+```{r}
+# Run regressions and extract residuals, padding NAs for missing data
+# Run regressions on log-transformed variables
+# mutate it to add to my data table
+d <- d |>
+  mutate(
+    relGest = residuals(lm(`log_gestation(mo)` ~ `log_mass(g)`, data = d, na.action = na.exclude)), #regress gestation and mass (age) to variable relGest
+    relWean = residuals(lm(`log_weaning(mo)` ~ `log_mass(g)`, data = d, na.action = na.exclude)), #regress weaning and mass (age) to variable relWean
+    relAFR = residuals(lm(`log_AFR(mo)` ~ `log_mass(g)`, data = d, na.action = na.exclude)), #regress AFR and mass (age) to variable realAFR
+    relLife = residuals(lm(`log_max. life(mo)` ~ `log_mass(g)`, data = d, na.action = na.exclude)), # regress max Life and mass (age) to variable relLife
+    relNewbornMass = residuals(lm(`log_newborn(g)` ~ `log_mass(g)`, data = d, na.action = na.exclude)), #regress newborn and mass (mass) to variable relNewbornMass
+    relWeaningMass = residuals(lm(`log_wean mass(g)` ~ `log_mass(g)`, data = d, na.action = na.exclude)) # regress wean mass and mass (mass) to variable relWeaningMass 
+  )
+
+```
+
+## Step 5
+
+### Plot 1
+
+```{r}
+p1 <- ggplot(d, aes(x = reorder(order, relLife, FUN = median, na.rm = TRUE), y = relLife)) + # plot relLife vs order
+  geom_boxplot() +
+  labs( #aesthetics for labels
+    title = "Relative Maximum Lifespan by Mammal Order",
+    x = "Order",
+    y = "Residual Max Lifespan (relLife)"
+  ) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) #aesthetics
+
+p1
+```
+
+Question answer: Primates — Highest median and overall upper range
+
+### Plot 2
+
+```{r}
+p2 <- ggplot(d, aes(x = reorder(order, relNewbornMass, FUN = median, na.rm = TRUE), y = relNewbornMass)) + # plot relnewbornmass vs order
+  geom_boxplot() +
+  labs( #aesthetics for labels
+    title = "Relative Newborn Mass by Mammal Order",
+    x = "Order",
+    y = "Residual Newborn Mass (relNewbornMass)"
+  ) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) #aesthetics
+
+p2
+```
+
+Question answer: The mammalian orders with the highest residual newborn mass are Dermoptera, Macroscelidea, and Cetacea.
+
+### Plot 3
+
+```{r}
+p3 <- ggplot(d, aes(x = reorder(order, relWeaningMass, FUN = median, na.rm = TRUE), y = relWeaningMass)) + # plot relweaningmass vs order
+  geom_boxplot() +
+  labs(#aesthetics labels
+    title = "Relative Weaning Mass by Mammal Order",
+    x = "Order",
+    y = "Residual Weaning Mass (relWeaningMass)"
+  ) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) #aesteetics
+
+p3
+```
+
+Question answer: The mammalian orders with the highest residual weaning mass are Dermoptera, Perissodactyla, and Insectivora.
+
+## Step 6
+
+### Filter data set
+
+```{r}
+# For lifespan drop_na
+life_data <- d |>
+  drop_na(
+    `log_max. life(mo)`,
+    `log_gestation(mo)`,
+    `log_newborn(g)`,
+    `log_weaning(mo)`,
+    `log_wean mass(g)`,
+    `log_litters/year`,
+    `log_mass(g)`
+  )
+
+# For AFR drop_na
+afr_data <- d |>
+  drop_na(
+    `log_AFR(mo)`,
+    `log_gestation(mo)`,
+    `log_newborn(g)`,
+    `log_weaning(mo)`,
+    `log_wean mass(g)`,
+    `log_litters/year`,
+    `log_mass(g)`
+  )
+```
+
+### run models
+
+```{r}
+# Full model for lifespan
+life_model_full <- lm(`log_max. life(mo)` ~  #our dependent, response variable: MAX LIFE
+                      `log_gestation(mo)` + # Predictor gestations
+                      `log_newborn(g)` + # predicto newborn mass
+                      `log_weaning(mo)` + # predictor weaning age
+                      `log_wean mass(g)` + #predictos weaning mass
+                      `log_litters/year` + # predictor litter per year
+                      `log_mass(g)`, # predictor mass 
+                      data = life_data) # our winnowed clean data it is pulling from
+
+# Full model for AFR
+afr_model_full <- lm(`log_AFR(mo)` ~ #our dependent, response variable: AFR
+                     `log_gestation(mo)` + # Predictor gestations
+                      `log_newborn(g)` + # predicto newborn mass
+                      `log_weaning(mo)` + # predictor weaning age
+                      `log_wean mass(g)` + #predictos weaning mass
+                      `log_litters/year` + # predictor litter per year
+                      `log_mass(g)`, # predictor mass 
+                      data = life_data) # our winnowed clean data it is pulling from
+```
+
+### AIC Model
+
+Info:
+
+<https://www.rdocumentation.org/packages/stats/versions/3.6.2/topics/step>
+
+<https://www.geeksforgeeks.org/step-function-in-r/> \# stepwise vairable selection info
+
+```{r}
+# Stepwise model selection (both directions)
+life_model_best <- step(life_model_full, direction = "both", trace = FALSE)
+afr_model_best <- step(afr_model_full, direction = "both", trace = FALSE)
+```
+
+```{r}
+summary(life_model_best)
+summary(afr_model_best)
+```
+
+Answer questions: 1.
+
+```{r}
+# Refit life model with na.fail, DID NOT WORK WITH MY PREVIOUS CLEAN DATA THAT ALREEADY HAD NAs filtered not sure why...
+life_model_full <- lm(`log_max. life(mo)` ~ 
+                        `log_gestation(mo)` + 
+                        `log_newborn(g)` + 
+                        `log_weaning(mo)` + 
+                        `log_wean mass(g)` + 
+                        `log_litters/year` + 
+                        `log_mass(g)`,
+                      data = life_data,
+                      na.action = na.fail) # added this for no missing values
+
+
+# Refit AFR model with na.fail
+afr_model_full <- lm(`log_AFR(mo)` ~ 
+                       `log_gestation(mo)` + `log_newborn(g)` + 
+                       `log_weaning(mo)` + `log_wean mass(g)` + 
+                       `log_litters/year` + `log_mass(g)`,
+                     data = afr_data,
+                     na.action = na.fail)
+
+# Dredge tests all subsets of the full model and ranks by AICc
+life_dredge <- dredge(life_model_full)
+# Perform model selection for AFR (Age at First Reproduction)
+afr_dredge <- dredge(afr_model_full)
+
+# Count models with delta AICc ≤ 4
+life_top_models <- subset(life_dredge, delta <= 4)
+afr_top_models <- subset(afr_dredge, delta <= 4)
+
+# Count how many top models exist for lifespan outcome based on AICc ≤ 4
+nrow(life_top_models)  # number of top models for life
+#  Count how many top models exist for AFR outcome based on AICc ≤ 4
+nrow(afr_top_models)   # number of top models for AFR
+```
+
+The best model for maximum lifespan includes 4 predictors, and there are 5 models within delta AICc ≤ 4. The best model for age at first reproduction (AFR) also includes 4 predictors, and there are 7 models within delta AICc ≤ 4.
+
+2.  
+
+```{r}
+# Extract predictors from top models
+life_top_vars <- get.models(life_dredge, subset = delta <= 4) |> # get list of models within AICc ≤ 4
+  map(~ names(coef(.))[-1]) |>  # drop intercept
+  reduce(intersect) # find variables that appear in *every* top model (shared across all)
+
+afr_top_vars <- get.models(afr_dredge, subset = delta <= 4) |> # get list of top models based on AFR 
+  map(~ names(coef(.))[-1]) |> # get variable names used in each model, exclude intercept
+  reduce(intersect) # return only the variables that are common to all top AFR models
+
+life_top_vars
+afr_top_vars
+```
+
+The variables that appear in all top models for both lifespan and AFR are:
+
+-   log_gestation(mo)
+
+-   log_weaning(mo)
+
+-   log_litters/year
+
+3\. Plots
+
+```{r}
+# Get top models with delta AICc <= 4
+life_models_top <- get.models(life_dredge, subset = delta <= 4)
+afr_models_top <- get.models(afr_dredge, subset = delta <= 4)
+
+# Model averaging
+life_avg <- model.avg(life_models_top)
+afr_avg <- model.avg(afr_models_top)
+
+# Life model CIs
+life_ci <- as.data.frame(confint(life_avg, full = TRUE))
+life_ci$Estimate <- coef(life_avg, full = TRUE)
+life_ci$term <- rownames(life_ci)
+
+# AFR model CIs
+afr_ci <- as.data.frame(confint(afr_avg, full = TRUE))
+afr_ci$Estimate <- coef(afr_avg, full = TRUE)
+afr_ci$term <- rownames(afr_ci)
+
+
+```
+
+```{r}
+# Plot: Lifespan
+lifespan_plot <- ggplot(life_ci, aes(x = term, y = Estimate)) +
+  geom_point() + # Add points for coefficient estimates
+  geom_errorbar(aes(ymin = `2.5 %`, ymax = `97.5 %`), width = 0.15) + #95% CI
+  labs(title = "Model-Averaged Coefficients for Lifespan", #LABELS
+       x = "Predictor", y = "Estimate") 
+lifespan_plot
+
+# Plot: AFR
+afr_plot <- ggplot(afr_ci, aes(x = term, y = Estimate)) +
+  geom_point() + # Add points for coefficient estimates
+  geom_errorbar(aes(ymin = `2.5 %`, ymax = `97.5 %`), width = 0.15) + #95% CI
+  labs(title = "Model-Averaged Coefficients for AFR", #LABELS
+       x = "Predictor", y = "Estimate") 
+afr_plot
+```
